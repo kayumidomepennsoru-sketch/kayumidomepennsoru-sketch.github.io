@@ -402,30 +402,45 @@ canvas.addEventListener("pointerdown",e=>{
     return;
   }
   let rect=canvas.getBoundingClientRect();
-  let p=snap(scrToCad(e.clientX-rect.left,e.clientY-rect.top));
-  if(mode==="DEL"){
-    selected=hit(p);
-    if(selected>=0){
-      pushUndo();
-      elems.splice(selected,1);
-      selected=-1;
-      pick=[];
-      trimKeepPoint=null;
-      draw();
-    }
-    return;
+
+// raw = 実際にタップしたCAD座標
+let raw=scrToCad(e.clientX-rect.left,e.clientY-rect.top);
+
+// sp = 端点・交点へスナップしたCAD座標
+let sp=snap(raw);
+
+if(mode==="DEL"){
+  selected=hit(raw);
+
+  if(selected>=0){
+    pushUndo();
+    elems.splice(selected,1);
+    selected=-1;
+    pick=[];
+    trimKeepPoint=null;
+    draw();
   }
-  if(["TRIM","C","R"].includes(mode)){
-    selectForEdit(p);
-    return;
-  }
-  if(mode==="ANGLE"){
-    pending={p:p};
-    openAnglePanel();
-    return;
-  }
-  start=p;
-  end=p;
+
+  return;
+}
+
+if(["TRIM","C","R"].includes(mode)){
+  // TRIMの残す方向はrawを使う
+  // LINE選択もrawを使う
+  selectForEdit(raw);
+  return;
+}
+
+if(mode==="ANGLE"){
+  // ANGLE開始点は端点・交点スナップを使う
+  pending={p:sp};
+  openAnglePanel();
+  return;
+}
+
+// 通常LINE作図はスナップ点を使う
+start=sp;
+end=sp;
 });
 canvas.addEventListener("pointermove",e=>{
   if(!pointers.has(e.pointerId))return;
