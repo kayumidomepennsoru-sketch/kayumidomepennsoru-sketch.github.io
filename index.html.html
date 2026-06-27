@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>NC Lathe iPhone CAD v1</title>
+<style>
+  :root{
+    --bg:#0f1115;
+    --panel:#181b22;
+    --panel2:#20242d;
+    --text:#e8eef8;
+    --muted:#9aa6b8;
+    --accent:#4da3ff;
+    --warn:#ffcc66;
+    --danger:#ff6b6b;
+    --line:#e8eef8;
+    --draft:#63d471;
+    --grid:#273040;
+    --gridMajor:#39455a;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    overflow:hidden;
+    touch-action:none;
+  }
+  #app{
+    width:100vw;
+    height:100vh;
+    display:flex;
+    flex-direction:column;
+  }
+  #topBar{
+    height:54px;
+    background:var(--panel);
+    border-bottom:1px solid #2d3442;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:6px 10px;
+    gap:8px;
+    flex-shrink:0;
+  }
+  .infoBlock{
+    min-width:0;
+    font-size:12px;
+    line-height:1.35;
+    color:var(--muted);
+  }
+  .infoBlock b{color:var(--text);font-weight:600;}
+  #modeLabel{color:var(--accent);font-weight:700;}
+  #canvasWrap{
+    position:relative;
+    flex:1;
+    min-height:0;
+    background:#0b0d11;
+  }
+  canvas{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+    display:block;
+    touch-action:none;
+  }
+  #bottomPanel{
+    background:var(--panel);
+    border-top:1px solid #2d3442;
+    padding:7px;
+    flex-shrink:0;
+  }
+  .row{
+    display:flex;
+    gap:6px;
+    margin-bottom:6px;
+  }
+  .row:last-child{margin-bottom:0;}
+  button{
+    border:1px solid #374052;
+    background:var(--panel2);
+    color:var(--text);
+    border-radius:9px;
+    min-height:38px;
+    padding:7px 9px;
+    font-size:12px;
+    font-weight:650;
+    flex:1;
+  }
+  button.active{
+    background:#0d3f70;
+    border-color:var(--accent);
+    color:#fff;
+  }
+  button.warn{color:var(--warn);}
+  button.danger{color:var(--danger);}
+  button:disabled{opacity:.35;}
+  #modalBackdrop{
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,.55);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:20;
+    padding:14px;
+  }
+  #modal{
+    width:min(420px,100%);
+    background:var(--panel);
+    border:1px solid #3b4558;
+    border-radius:14px;
+    box-shadow:0 12px 40px rgba(0,0,0,.45);
+    padding:14px;
+  }
+  #modal h3{
+    margin:0 0 10px;
+    font-size:16px;
+  }
+  .fieldGrid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:8px;
+  }
+  label{
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    color:var(--muted);
+    font-size:12px;
+  }
+  input, textarea{
+    width:100%;
+    border:1px solid #3b4558;
+    border-radius:8px;
+    background:#10131a;
+    color:var(--text);
+    padding:9px;
+    font-size:16px;
+    outline:none;
+  }
+  textarea{
+    height:230px;
+    resize:none;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:11px;
+    line-height:1.35;
+  }
+  .modalButtons{
+    display:flex;
+    gap:8px;
+    margin-top:12px;
+  }
+  #hint{
+    position:absolute;
+    left:8px;
+    bottom:8px;
+    right:8px;
+    pointer-events:none;
+    font-size:11px;
+    color:var(--muted);
+    background:rgba(15,17,21,.72);
+    border:1px solid rgba(255,255,255,.08);
+    border-radius:8px;
+    padding:7px 9px;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topBar">
+    <div class="infoBlock">
+      <div>Mode: <span id="modeLabel">AUTO</span></div>
+      <div>Elements: <b id="elemCount">0</b> / Selected: <b id="selLabel">none</b></div>
+    </div>
+    <div class="infoBlock" style="text-align:right;">
+      <div>Z: <b id="zLabel">0.000</b></div>
+      <div>X: <b id="xLabel">0.000</b> <span id="snapLabel"></span></div>
+    </div>
+  </div>
+
+  <div id="canvasWrap">
+    <canvas id="cadCanvas"></canvas>
+    <div id="hint">1本指スワイプ：仮LINE作成 / 2本指：パン・ズーム / H/Vは方向固定 / AUTOはスワイプ方向判定</div>
+  </div>
+
+  <div id="bottomPanel">
+    <div class="row">
+      <button id="btnAuto" class="active">AUTO</button>
+      <button id="btnH">H-LINE</button>
+      <button id="btnV">V-LINE</button>
+      <button id="btnAngle">ANGLE</button>
+      <button id="btnFit">FIT</button>
+    </div>
+    <div class="row">
+      <button id="btnDelete" class="danger">DELETE</button>
+      <button id="btnUndo">UNDO</button>
+      <button id="btnRedo">REDO</button>
+      <button id="btnDXF" class="warn">DXF</button>
+    </div>
+    <div class="row">
+      <button id="btnTrim" disabled>TRIM 次段階</button>
+      <button id="btnCR" disabled>CR 次段階</button>
+      <button id="btnArc" disabled>ARC 次段階</button>
+    </div>
+  </div>
+</div>
+
+<div id="modalBackdrop">
+  <div id="modal">
+    <h3 id="modalTitle">数値入力</h3>
+    <div id="modalBody"></div>
+    <div class="modalButtons">
+      <button id="modalCancel">CANCEL</button>
+      <button id="modalOK" class="active">OK</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  const canvas = document.getElementById('cadCanvas');
+  const ctx = canvas.getContext('2d');
+  const wrap = document.getElementById('canvasWrap');
+
+  const zLabel = document.getElementById('zLabel');
+  const xLabel = document.getElementById('xLabel');
+  const modeLabel = document.getElementById('modeLabel');
+  const elemCount = document.getElementById('elemCount');
+  const selLabel = document.getElementById('selLabel');
+  const snapLabel = document.getElementById('snapLabel');
+
+  const modalBackdrop = document.getElementById('modalBackdrop');
+  const modalTitle = document.getElementById('modalTitle');
+  const modalBody = document.getElementById('modalBody');
+  const modalOK = document.getElementById('modalOK');
+  const modalCancel = document.getElementById('modalCancel');
+
+  const state = {
+    mode: 'AUTO',
+    elements: [],
+    selectedId: null,
+    draft: null,
+    scale: 8,
+    originPx: { x: 0, y: 0 },
+    dpr: 1,
+    pointers: new Map(),
+    gesture: null,
+    dragging: false,
+    dragStart: null,
+    lastPoint: null,
+    undoStack: [],
+    redoStack: [],
+    idSeq: 1,
+    snapTolPx: 16,
+    angleStart: null
+  };
+
+  function resize(){
+    const r = wrap.getBoundingClientRect();
+    state.dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.floor(r.width * state.dpr));
+    canvas.height = Math.max(1, Math.floor(r.height * state.dpr));
+    canvas.style.width = r.width + 'px';
+    canvas.style.height = r.height + 'px';
+    ctx.setTransform(state.dpr,0,0,state.dpr,0,0);
+    if(state.originPx.x === 0 && state.originPx.y === 0){
+      state.originPx.x = r.width * 0.72;
+      state.originPx.y = r.height * 0.25;
+    }
+    draw();
+  }
+
+  function cadToScreen(p){
+    return {
+      x: state.originPx.x + p.z * state.scale,
+      y: state.originPx.y - p.x * state.scale
+    };
+  }
+  function screenToCad(p){
+    return {
+      z: (p.x - state.originPx.x) / state.scale,
+      x: (state.originPx.y - p.y) / state.scale
+    };
+  }
+  function fmt(v){ return Number.isFinite(v) ? v.toFixed(3) : '0.000'; }
+  function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+  function clone(obj){ return JSON.parse(JSON.stringify(obj)); }
+  function nextId(){ return 'E' + String(state.idSeq++).padStart(4,'0'); }
+
+  function pushUndo(){
+    state.undoStack.push(clone({ elements: state.elements, idSeq: state.idSeq }));
+    if(state.undoStack.length > 80) state.undoStack.shift();
+    state.redoStack = [];
+  }
+  function restore(snap){
+    state.elements = clone(snap.elements);
+    state.idSeq = snap.idSeq || state.idSeq;
+    state.selectedId = null;
+    state.draft = null;
+    updateInfo();
+    draw();
+  }
+
+  function setMode(m){
+    state.mode = m;
+    state.angleStart = null;
+    for(const [id, btn] of Object.entries({
+      AUTO: 'btnAuto', H: 'btnH', V: 'btnV', ANGLE: 'btnAngle'
+    })) document.getElementById(btn).classList.toggle('active', id === m);
+    modeLabel.textContent = m;
+    draw();
+  }
+
+  function updateInfo(){
+    elemCount.textContent = String(state.elements.length);
+    selLabel.textContent = state.selectedId || 'none';
+  }
+
+  function drawGrid(w,h){
+    ctx.save();
+    ctx.lineWidth = 1;
+    const cadMin = screenToCad({x:0,y:h});
+    const cadMax = screenToCad({x:w,y:0});
+    let step = niceStep(44 / state.scale);
+    let major = step * 5;
+
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--grid');
+    ctx.beginPath();
+    for(let z = Math.floor(cadMin.z/step)*step; z <= cadMax.z; z += step){
+      const sx = cadToScreen({z, x:0}).x;
+      ctx.moveTo(sx,0); ctx.lineTo(sx,h);
+    }
+    for(let x = Math.floor(cadMin.x/step)*step; x <= cadMax.x; x += step){
+      const sy = cadToScreen({z:0, x}).y;
+      ctx.moveTo(0,sy); ctx.lineTo(w,sy);
+    }
+    ctx.stroke();
+
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--gridMajor');
+    ctx.beginPath();
+    for(let z = Math.floor(cadMin.z/major)*major; z <= cadMax.z; z += major){
+      const sx = cadToScreen({z, x:0}).x;
+      ctx.moveTo(sx,0); ctx.lineTo(sx,h);
+    }
+    for(let x = Math.floor(cadMin.x/major)*major; x <= cadMax.x; x += major){
+      const sy = cadToScreen({z:0, x}).y;
+      ctx.moveTo(0,sy); ctx.lineTo(w,sy);
+    }
+    ctx.stroke();
+
+    // Z / X axis
+    ctx.strokeStyle = '#69758b';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const xAxisY = cadToScreen({z:0,x:0}).y;
+    const zAxisX = cadToScreen({z:0,x:0}).x;
+    ctx.moveTo(0,xAxisY); ctx.lineTo(w,xAxisY);
+    ctx.moveTo(zAxisX,0); ctx.lineTo(zAxisX,h);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function niceStep(v){
+    const p = Math.pow(10, Math.floor(Math.log10(v || 1)));
+    const n = v / p;
+    if(n <= 1) return p;
+    if(n <= 2) return 2*p;
+    if(n <= 5) return 5*p;
+    return 10*p;
+  }
+
+  function drawLineElem(e, style){
+    const a = cadToScreen({z:e.z1,x:e.x1});
+    const b = cadToScreen({z:e.z2,x:e.x2});
+    ctx.save();
+    ctx.strokeStyle = style.color;
+    ctx.lineWidth = style.width;
+    ctx.setLineDash(style.dash || []);
+    ctx.beginPath();
+    ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    drawEndpoint(a, style.pt || style.color);
+    drawEndpoint(b, style.pt || style.color);
+    ctx.restore();
+  }
+
+  function drawEndpoint(p, color){
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(p.x,p.y,3.2,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  function draw(){
+    const r = wrap.getBoundingClientRect();
+    const w = r.width, h = r.height;
+    ctx.clearRect(0,0,w,h);
+    drawGrid(w,h);
+
+    for(const e of state.elements){
+      const selected = e.id === state.selectedId;
+      drawLineElem(e, { color: selected ? '#ffcc66' : '#e8eef8', width: selected ? 3 : 2 });
+    }
+    if(state.draft){
+      drawLineElem(state.draft, { color: '#63d471', width: 2.5, dash: [8,5] });
+    }
+    if(state.angleStart){
+      const p = cadToScreen(state.angleStart);
+      ctx.save();
+      ctx.strokeStyle = '#4da3ff';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(p.x,p.y,9,0,Math.PI*2); ctx.stroke();
+      ctx.restore();
+    }
+    updateInfo();
+  }
+
+  function snapCad(cad){
+    let best = null;
+    for(const e of state.elements){
+      for(const p of [{z:e.z1,x:e.x1},{z:e.z2,x:e.x2}]){
+        const sp = cadToScreen(p);
+        const sc = cadToScreen(cad);
+        const d = dist(sp,sc);
+        if(d <= state.snapTolPx && (!best || d < best.d)) best = { p, d, type:'END' };
+      }
+    }
+    return best ? { ...best.p, snap:true, snapType:best.type } : { ...cad, snap:false };
+  }
+
+  function pointerPoint(ev){
+    const r = canvas.getBoundingClientRect();
+    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+  }
+
+  function makeDraft(a,b, forcedMode){
+    const dz = b.z - a.z;
+    const dx = b.x - a.x;
+    let mode = forcedMode;
+    if(mode === 'AUTO') mode = Math.abs(dz) >= Math.abs(dx) ? 'H' : 'V';
+    if(mode === 'H'){
+      return { type:'LINE', z1:a.z, x1:a.x, z2:b.z, x2:a.x, draftMode:'H' };
+    }
+    if(mode === 'V'){
+      return { type:'LINE', z1:a.z, x1:a.x, z2:a.z, x2:b.x, draftMode:'V' };
+    }
+    return { type:'LINE', z1:a.z, x1:a.x, z2:b.z, x2:b.x, draftMode:'FREE' };
+  }
+
+  function showLineModal(draft){
+    return new Promise(resolve => {
+      modalTitle.textContent = draft.draftMode === 'H' ? '水平LINE 数値入力' : '垂直LINE 数値入力';
+      const isH = draft.draftMode === 'H';
+      modalBody.innerHTML = isH ? `
+        <div class="fieldGrid">
+          <label>X位置<input id="inX" type="number" step="0.001" value="${fmt(draft.x1)}"></label>
+          <label>Z1<input id="inZ1" type="number" step="0.001" value="${fmt(draft.z1)}"></label>
+          <label>Z2<input id="inZ2" type="number" step="0.001" value="${fmt(draft.z2)}"></label>
+        </div>` : `
+        <div class="fieldGrid">
+          <label>Z位置<input id="inZ" type="number" step="0.001" value="${fmt(draft.z1)}"></label>
+          <label>X1<input id="inX1" type="number" step="0.001" value="${fmt(draft.x1)}"></label>
+          <label>X2<input id="inX2" type="number" step="0.001" value="${fmt(draft.x2)}"></label>
+        </div>`;
+      modalBackdrop.style.display = 'flex';
+      setTimeout(() => {
+        const first = modalBody.querySelector('input');
+        if(first) first.focus();
+      }, 80);
+      modalOK.onclick = () => {
+        let e;
+        if(isH){
+          const x = num('inX'), z1 = num('inZ1'), z2 = num('inZ2');
+          e = { id:nextId(), type:'LINE', z1, x1:x, z2, x2:x, src:'USER_HLINE' };
+        }else{
+          const z = num('inZ'), x1 = num('inX1'), x2 = num('inX2');
+          e = { id:nextId(), type:'LINE', z1:z, x1, z2:z, x2, src:'USER_VLINE' };
+        }
+        modalBackdrop.style.display = 'none';
+        resolve(e);
+      };
+      modalCancel.onclick = () => { modalBackdrop.style.display = 'none'; resolve(null); };
+    });
+  }
+
+  function num(id){
+    const v = parseFloat(document.getElementById(id).value);
+    return Number.isFinite(v) ? v : 0;
+  }
+
+  function showAngleModal(start){
+    return new Promise(resolve => {
+      modalTitle.textContent = '斜めLINE 角度入力';
+      modalBody.innerHTML = `
+        <div class="fieldGrid">
+          <label>開始Z<input id="aZ" type="number" step="0.001" value="${fmt(start.z)}"></label>
+          <label>開始X<input id="aX" type="number" step="0.001" value="${fmt(start.x)}"></label>
+          <label>角度 deg<input id="aDeg" type="number" step="0.001" value="45"></label>
+          <label>仮長さ<input id="aLen" type="number" step="0.001" value="50"></label>
+        </div>`;
+      modalBackdrop.style.display = 'flex';
+      setTimeout(()=>document.getElementById('aDeg').focus(),80);
+      modalOK.onclick = () => {
+        const z1 = num('aZ'), x1 = num('aX');
+        const deg = num('aDeg'), len = Math.abs(num('aLen')) || 50;
+        const rad = deg * Math.PI / 180;
+        const z2 = z1 + Math.cos(rad) * len;
+        const x2 = x1 + Math.sin(rad) * len;
+        modalBackdrop.style.display = 'none';
+        resolve({ id:nextId(), type:'LINE', z1, x1, z2, x2, src:'USER_ANGLE' });
+      };
+      modalCancel.onclick = () => { modalBackdrop.style.display = 'none'; resolve(null); };
+    });
+  }
+
+  function nearestElement(screen){
+    let best = null;
+    for(const e of state.elements){
+      const a = cadToScreen({z:e.z1,x:e.x1});
+      const b = cadToScreen({z:e.z2,x:e.x2});
+      const d = pointSegDist(screen,a,b);
+      if(d < 14 && (!best || d < best.d)) best = { e, d };
+    }
+    return best ? best.e : null;
+  }
+  function pointSegDist(p,a,b){
+    const vx=b.x-a.x, vy=b.y-a.y;
+    const wx=p.x-a.x, wy=p.y-a.y;
+    const c1 = vx*wx + vy*wy;
+    if(c1 <= 0) return dist(p,a);
+    const c2 = vx*vx + vy*vy;
+    if(c2 <= c1) return dist(p,b);
+    const t = c1 / c2;
+    return dist(p,{x:a.x+t*vx,y:a.y+t*vy});
+  }
+
+  function pointerDown(ev){
+    ev.preventDefault();
+    canvas.setPointerCapture(ev.pointerId);
+    const p = pointerPoint(ev);
+    state.pointers.set(ev.pointerId, p);
+
+    if(state.pointers.size === 2){
+      const pts = [...state.pointers.values()];
+      state.gesture = {
+        startDist: dist(pts[0],pts[1]),
+        startScale: state.scale,
+        startOrigin: {...state.originPx},
+        center: {x:(pts[0].x+pts[1].x)/2, y:(pts[0].y+pts[1].y)/2}
+      };
+      state.dragging = false;
+      state.draft = null;
+      draw();
+      return;
+    }
+
+    const cadRaw = screenToCad(p);
+    const cad = snapCad(cadRaw);
+    state.lastPoint = p;
+
+    if(state.mode === 'ANGLE'){
+      state.angleStart = cad;
+      draw();
+      showAngleModal(cad).then(e => {
+        if(e){ pushUndo(); state.elements.push(e); }
+        state.angleStart = null;
+        updateInfo(); draw();
+      });
+      return;
+    }
+
+    const hit = nearestElement(p);
+    if(hit){
+      state.selectedId = hit.id;
+      updateInfo(); draw();
+      return;
+    }
+
+    state.selectedId = null;
+    state.dragging = true;
+    state.dragStart = cad;
+    state.draft = null;
+    updateInfo(); draw();
+  }
+
+  function pointerMove(ev){
+    ev.preventDefault();
+    const p = pointerPoint(ev);
+    if(!state.pointers.has(ev.pointerId)) return;
+    state.pointers.set(ev.pointerId,p);
+
+    const cadRaw = screenToCad(p);
+    const cadSnap = snapCad(cadRaw);
+    zLabel.textContent = fmt(cadSnap.z);
+    xLabel.textContent = fmt(cadSnap.x);
+    snapLabel.textContent = cadSnap.snap ? ` SNAP:${cadSnap.snapType}` : '';
+
+    if(state.pointers.size === 2 && state.gesture){
+      const pts = [...state.pointers.values()];
+      const cen = {x:(pts[0].x+pts[1].x)/2, y:(pts[0].y+pts[1].y)/2};
+      const d = dist(pts[0],pts[1]);
+      const beforeCad = screenToCad(state.gesture.center);
+      state.scale = Math.max(1, Math.min(80, state.gesture.startScale * (d / Math.max(1,state.gesture.startDist))));
+      state.originPx.x = cen.x - beforeCad.z * state.scale;
+      state.originPx.y = cen.y + beforeCad.x * state.scale;
+      draw();
+      return;
+    }
+
+    if(state.dragging && state.dragStart){
+      state.draft = makeDraft(state.dragStart, cadSnap, state.mode);
+      draw();
+    }
+  }
+
+  function pointerUp(ev){
+    ev.preventDefault();
+    const p = pointerPoint(ev);
+    state.pointers.delete(ev.pointerId);
+    if(state.pointers.size < 2) state.gesture = null;
+
+    if(!state.dragging || !state.dragStart || !state.draft){
+      state.dragging = false;
+      state.dragStart = null;
+      return;
+    }
+    const draft = clone(state.draft);
+    const a = cadToScreen({z:draft.z1,x:draft.x1});
+    const b = cadToScreen({z:draft.z2,x:draft.x2});
+    state.dragging = false;
+    state.dragStart = null;
+    state.draft = null;
+
+    if(dist(a,b) < 18){ draw(); return; }
+    draw();
+    showLineModal(draft).then(e => {
+      if(e){ pushUndo(); state.elements.push(e); }
+      updateInfo(); draw();
+    });
+  }
+
+  function fit(){
+    const r = wrap.getBoundingClientRect();
+    if(state.elements.length === 0){
+      state.scale = 8;
+      state.originPx.x = r.width * 0.72;
+      state.originPx.y = r.height * 0.25;
+      draw(); return;
+    }
+    let minZ=Infinity,maxZ=-Infinity,minX=Infinity,maxX=-Infinity;
+    for(const e of state.elements){
+      minZ = Math.min(minZ,e.z1,e.z2); maxZ = Math.max(maxZ,e.z1,e.z2);
+      minX = Math.min(minX,e.x1,e.x2); maxX = Math.max(maxX,e.x1,e.x2);
+    }
+    const pad = 20;
+    const dz = Math.max(1, maxZ-minZ);
+    const dx = Math.max(1, maxX-minX);
+    state.scale = Math.max(1, Math.min(80, Math.min((r.width-pad*2)/dz, (r.height-pad*2)/dx)));
+    const cz = (minZ+maxZ)/2, cx=(minX+maxX)/2;
+    state.originPx.x = r.width/2 - cz*state.scale;
+    state.originPx.y = r.height/2 + cx*state.scale;
+    draw();
+  }
+
+  function deleteSelected(){
+    if(!state.selectedId) return;
+    pushUndo();
+    state.elements = state.elements.filter(e => e.id !== state.selectedId);
+    state.selectedId = null;
+    updateInfo(); draw();
+  }
+  function undo(){
+    if(state.undoStack.length === 0) return;
+    state.redoStack.push(clone({ elements: state.elements, idSeq: state.idSeq }));
+    restore(state.undoStack.pop());
+  }
+  function redo(){
+    if(state.redoStack.length === 0) return;
+    state.undoStack.push(clone({ elements: state.elements, idSeq: state.idSeq }));
+    restore(state.redoStack.pop());
+  }
+
+  function showDXF(){
+    modalTitle.textContent = 'DXF LINE / JSON 出力';
+    const json = JSON.stringify(state.elements.map(e => ({
+      type:e.type, z1:e.z1, x1:e.x1, z2:e.z2, x2:e.x2, src:e.src || 'USER_DRAW'
+    })), null, 2);
+    const dxfLike = state.elements.map(e => `LINE Z1=${fmt(e.z1)} X1=${fmt(e.x1)} Z2=${fmt(e.z2)} X2=${fmt(e.x2)} SRC=${e.src || ''}`).join('\n');
+    modalBody.innerHTML = `
+      <label>CAM受け渡し用 JSON / DXF風テキスト
+        <textarea readonly id="outText">${escapeHtml(json + '\n\n--- DXF-LIKE ---\n' + dxfLike)}</textarea>
+      </label>`;
+    modalBackdrop.style.display = 'flex';
+    modalOK.onclick = () => {
+      const t = document.getElementById('outText');
+      t.focus(); t.select();
+      try{ document.execCommand('copy'); }catch(_){ }
+    };
+    modalCancel.onclick = () => { modalBackdrop.style.display = 'none'; };
+  }
+  function escapeHtml(s){
+    return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+
+  canvas.addEventListener('pointerdown', pointerDown, {passive:false});
+  canvas.addEventListener('pointermove', pointerMove, {passive:false});
+  canvas.addEventListener('pointerup', pointerUp, {passive:false});
+  canvas.addEventListener('pointercancel', pointerUp, {passive:false});
+
+  document.getElementById('btnAuto').onclick = () => setMode('AUTO');
+  document.getElementById('btnH').onclick = () => setMode('H');
+  document.getElementById('btnV').onclick = () => setMode('V');
+  document.getElementById('btnAngle').onclick = () => setMode('ANGLE');
+  document.getElementById('btnFit').onclick = fit;
+  document.getElementById('btnDelete').onclick = deleteSelected;
+  document.getElementById('btnUndo').onclick = undo;
+  document.getElementById('btnRedo').onclick = redo;
+  document.getElementById('btnDXF').onclick = showDXF;
+
+  window.addEventListener('resize', resize);
+  resize();
+  updateInfo();
+})();
+</script>
+</body>
+</html>
