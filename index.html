@@ -1,33 +1,33 @@
-<script>location.replace("cad.html?v=3");</script>script>location.replace("cad.html?v=1");</script><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>NC Lathe CAD</title>
+<title>NC Lathe CAD v6</title>
 <style>
 html,body{margin:0;width:100%;height:100%;background:#111;color:#eee;font-family:Arial,sans-serif;overflow:hidden}
 #top{height:42px;background:#222;display:flex;align-items:center;gap:10px;padding:0 10px;font-size:13px;box-sizing:border-box}
 #cad{display:block;background:#050505;touch-action:none}
-#bar{height:96px;background:#1b1b1b;display:flex;flex-wrap:wrap;gap:6px;padding:6px;box-sizing:border-box}
+#bar{height:104px;background:#1b1b1b;display:flex;flex-wrap:wrap;gap:6px;padding:6px;box-sizing:border-box}
 button{background:#333;color:#fff;border:1px solid #666;border-radius:8px;padding:8px 10px;font-weight:bold}
 button.on{background:#0a65d8}
 #panel{position:absolute;left:12px;right:12px;top:80px;background:#222;border:1px solid #777;border-radius:12px;padding:12px;display:none;z-index:10}
 #panel input{width:92%;font-size:22px;margin:8px 0;padding:10px}
-#out{position:absolute;left:8px;right:8px;bottom:105px;height:180px;background:#fff;color:#000;display:none;overflow:auto;font-size:12px;padding:8px;white-space:pre-wrap;z-index:9}
+#out{position:absolute;left:8px;right:8px;bottom:112px;height:190px;background:#fff;color:#000;display:none;overflow:auto;font-size:12px;padding:8px;white-space:pre-wrap;z-index:9}
 .note{font-size:12px;color:#aaa}
 </style>
 </head>
 <body>
-<div id="top">
-<b>NC Lathe CAD</b>
-<span id="pos">Z0 X0</span>
-<span id="mode">AUTO</span>
-</div>
+<div id="top"><b>NC Lathe CAD</b><span id="pos">Z0 X0</span><span id="mode">AUTO</span></div>
 <canvas id="cad"></canvas>
 <div id="bar">
 <button onclick="setMode('AUTO')" id="bAUTO" class="on">AUTO</button>
 <button onclick="setMode('H')" id="bH">H-LINE</button>
 <button onclick="setMode('V')" id="bV">V-LINE</button>
+<button onclick="setMode('ANGLE')" id="bANGLE">ANGLE</button>
+<button onclick="setMode('TRIM')" id="bTRIM">TRIM</button>
+<button onclick="setMode('C')" id="bC">C</button>
+<button onclick="setMode('R')" id="bR">R</button>
 <button onclick="setMode('PAN')" id="bPAN">PAN</button>
 <button onclick="setMode('DEL')" id="bDEL">DELETE</button>
 <button onclick="undo()">UNDO</button>
@@ -35,398 +35,271 @@ button.on{background:#0a65d8}
 <button onclick="showDXF()">DXF</button>
 <button onclick="clearAll()">CLEAR</button>
 </div>
-<div id="panel">
-<div id="ptitle">LINE INPUT</div>
-<div id="inputs"></div>
-<div class="note">水平線はXのみ、垂直線はZのみ入力</div>
-<button onclick="okLine()">OK</button>
-<button onclick="cancelLine()">Cancel</button>
-</div>
+<div id="panel"><div id="ptitle">INPUT</div><div id="inputs"></div><div class="note" id="pnote"></div><button onclick="okPanel()">OK</button><button onclick="cancelPanel()">Cancel</button></div>
 <div id="out"></div>
 <script>
-let canvas=document.getElementById("cad");
-let ctx=canvas.getContext("2d");
-let elems=[];
-let undoStack=[];
-let mode="AUTO";
-let scale=8;
-let ox=0;
-let oy=0;
-let start=null;
-let end=null;
-let pending=null;
-let selected=-1;
-let pointers=new Map();
-let pinchStartDist=0;
-let pinchStartScale=scale;
-let pinchStartOx=0;
-let pinchStartOy=0;
-let pinchCenterStart=null;
-let panStart=null;
-let panOx=0;
-let panOy=0;
-function resize(){
-  canvas.width=innerWidth;
-  canvas.height=innerHeight-138;
-  draw();
-}
-addEventListener("resize",resize);
-resize();
-function cadToScr(p){
-  return {
-    x:canvas.width/2+ox+p.z*scale,
-    y:canvas.height/2+oy-p.x*scale
-  };
-}
-function scrToCad(x,y){
-  return {
-    z:(x-canvas.width/2-ox)/scale,
-    x:(canvas.height/2+oy-y)/scale
-  };
-}
-function fmt(v){
-  return Math.round(v*1000)/1000;
-}
+let canvas=document.getElementById("cad"),ctx=canvas.getContext("2d");
+let elems=[],undoStack=[],mode="AUTO";
+let scale=8,ox=0,oy=0,start=null,end=null,pending=null,selected=-1,pick=[],trimKeepPoint=null,panelType="";
+let pointers=new Map(),pinchStartDist=0,pinchStartScale=scale,pinchStartOx=0,pinchStartOy=0,pinchCenterStart=null,panStart=null,panOx=0,panOy=0;
+function resize(){canvas.width=innerWidth;canvas.height=innerHeight-146;draw()}
+addEventListener("resize",resize);resize();
+function cadToScr(p){return{x:canvas.width/2+ox+p.z*scale,y:canvas.height/2+oy-p.x*scale}}
+function scrToCad(x,y){return{z:(x-canvas.width/2-ox)/scale,x:(canvas.height/2+oy-y)/scale}}
+function fmt(v){return Math.round(v*1000)/1000}
 function setMode(m){
-  mode=m;
-  document.getElementById("mode").textContent=m;
-  ["AUTO","H","V","PAN","DEL"].forEach(k=>{
-    document.getElementById("b"+k).classList.toggle("on",k===m);
-  });
-  start=null;
-  end=null;
-  draw();
+  mode=m;document.getElementById("mode").textContent=m;
+  ["AUTO","H","V","ANGLE","TRIM","C","R","PAN","DEL"].forEach(k=>document.getElementById("b"+k).classList.toggle("on",k===m));
+  start=null;end=null;pending=null;pick=[];selected=-1;trimKeepPoint=null;draw()
 }
-function pushUndo(){
-  undoStack.push(JSON.stringify(elems));
-  if(undoStack.length>50)undoStack.shift();
-}
-function undo(){
-  let s=undoStack.pop();
-  if(!s)return;
-  elems=JSON.parse(s);
-  selected=-1;
-  draw();
-}
-function clearAll(){
-  if(!confirm("全削除しますか？"))return;
-  pushUndo();
-  elems=[];
-  selected=-1;
-  draw();
-}
+function pushUndo(){undoStack.push(JSON.stringify(elems));if(undoStack.length>50)undoStack.shift()}
+function undo(){let s=undoStack.pop();if(!s)return;elems=JSON.parse(s);pick=[];selected=-1;trimKeepPoint=null;draw()}
+function clearAll(){if(!confirm("全削除しますか？"))return;pushUndo();elems=[];pick=[];selected=-1;trimKeepPoint=null;draw()}
 function fit(){
-  if(!elems.length){
-    scale=8;
-    ox=0;
-    oy=0;
-    draw();
-    return;
-  }
+  if(!elems.length){scale=8;ox=0;oy=0;draw();return}
   let zs=[],xs=[];
-  elems.forEach(e=>{
-    zs.push(e.z1,e.z2);
-    xs.push(e.x1,e.x2);
-  });
-  let zmin=Math.min(...zs),zmax=Math.max(...zs);
-  let xmin=Math.min(...xs),xmax=Math.max(...xs);
-  let dz=Math.max(1,zmax-zmin);
-  let dx=Math.max(1,xmax-xmin);
+  elems.forEach(e=>{zs.push(e.z1,e.z2);xs.push(e.x1,e.x2);if(e.type==="ARC"){zs.push(e.cz-e.r,e.cz+e.r);xs.push(e.cx-e.r,e.cx+e.r)}});
+  let zmin=Math.min(...zs),zmax=Math.max(...zs),xmin=Math.min(...xs),xmax=Math.max(...xs);
+  let dz=Math.max(1,zmax-zmin),dx=Math.max(1,xmax-xmin);
   scale=Math.min(canvas.width/(dz+20),canvas.height/(dx+20));
-  ox=-((zmin+zmax)/2)*scale;
-  oy=((xmin+xmax)/2)*scale;
-  draw();
+  ox=-((zmin+zmax)/2)*scale;oy=((xmin+xmax)/2)*scale;draw()
 }
 function draw(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  drawGrid();
-  drawAxesWithNumbers();
+  ctx.clearRect(0,0,canvas.width,canvas.height);drawGrid();drawAxesWithNumbers();
   elems.forEach((e,i)=>{
-    let a=cadToScr({z:e.z1,x:e.x1});
-    let b=cadToScr({z:e.z2,x:e.x2});
-    ctx.strokeStyle=i===selected?"yellow":"#00ff80";
-    ctx.lineWidth=i===selected?4:2;
-    ctx.beginPath();
-    ctx.moveTo(a.x,a.y);
-    ctx.lineTo(b.x,b.y);
-    ctx.stroke();
-    drawPt(a);
-    drawPt(b);
+    let isPick=pick.includes(i),isSel=i===selected;
+    ctx.strokeStyle=isPick?"orange":(isSel?"yellow":(e.type==="ARC"?"#ff66ff":"#00ff80"));
+    ctx.lineWidth=isPick||isSel?4:2;
+    if(e.type==="LINE")drawLineElem(e); if(e.type==="ARC")drawArcElem(e);
+    drawPt(cadToScr({z:e.z1,x:e.x1}));drawPt(cadToScr({z:e.z2,x:e.x2}));
   });
   if(start&&end){
-    let a=cadToScr(start);
-    let b=cadToScr(end);
-    let d=detect(start,end);
-    if(mode==="H"||d==="H") b.y=a.y;
-    if(mode==="V"||d==="V") b.x=a.x;
-    ctx.strokeStyle="orange";
-    ctx.lineWidth=2;
-    ctx.setLineDash([6,5]);
-    ctx.beginPath();
-    ctx.moveTo(a.x,a.y);
-    ctx.lineTo(b.x,b.y);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    let a=cadToScr(start),b=cadToScr(end),d=detect(start,end);
+    if(mode==="H"||d==="H")b.y=a.y;if(mode==="V"||d==="V")b.x=a.x;
+    ctx.strokeStyle="orange";ctx.lineWidth=2;ctx.setLineDash([6,5]);
+    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();ctx.setLineDash([]);
   }
 }
+function drawLineElem(e){let a=cadToScr({z:e.z1,x:e.x1}),b=cadToScr({z:e.z2,x:e.x2});ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
+function drawArcElem(e){let c=cadToScr({z:e.cz,x:e.cx});let a1=Math.atan2(-(e.x1-e.cx),e.z1-e.cz),a2=Math.atan2(-(e.x2-e.cx),e.z2-e.cz);ctx.beginPath();ctx.arc(c.x,c.y,Math.abs(e.r*scale),a1,a2,e.cw?false:true);ctx.stroke()}
 function drawGrid(){
-  let step=10;
-  ctx.strokeStyle="rgba(255,255,255,.10)";
-  ctx.lineWidth=1;
-  let tl=scrToCad(0,0);
-  let br=scrToCad(canvas.width,canvas.height);
-  let zmin=Math.floor(Math.min(tl.z,br.z)/step)*step;
-  let zmax=Math.ceil(Math.max(tl.z,br.z)/step)*step;
-  let xmin=Math.floor(Math.min(tl.x,br.x)/step)*step;
-  let xmax=Math.ceil(Math.max(tl.x,br.x)/step)*step;
-  for(let z=zmin;z<=zmax;z+=step){
-    let a=cadToScr({z:z,x:xmin});
-    let b=cadToScr({z:z,x:xmax});
-    ctx.beginPath();
-    ctx.moveTo(a.x,a.y);
-    ctx.lineTo(b.x,b.y);
-    ctx.stroke();
-  }
-  for(let x=xmin;x<=xmax;x+=step){
-    let a=cadToScr({z:zmin,x:x});
-    let b=cadToScr({z:zmax,x:x});
-    ctx.beginPath();
-    ctx.moveTo(a.x,a.y);
-    ctx.lineTo(b.x,b.y);
-    ctx.stroke();
-  }
+  let step=10;ctx.strokeStyle="rgba(255,255,255,.10)";ctx.lineWidth=1;
+  let tl=scrToCad(0,0),br=scrToCad(canvas.width,canvas.height);
+  let zmin=Math.floor(Math.min(tl.z,br.z)/step)*step,zmax=Math.ceil(Math.max(tl.z,br.z)/step)*step;
+  let xmin=Math.floor(Math.min(tl.x,br.x)/step)*step,xmax=Math.ceil(Math.max(tl.x,br.x)/step)*step;
+  for(let z=zmin;z<=zmax;z+=step){let a=cadToScr({z:z,x:xmin}),b=cadToScr({z:z,x:xmax});ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
+  for(let x=xmin;x<=xmax;x+=step){let a=cadToScr({z:zmin,x:x}),b=cadToScr({z:zmax,x:x});ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke()}
 }
 function drawAxesWithNumbers(){
-  let step=10;
-  let tl=scrToCad(0,0);
-  let br=scrToCad(canvas.width,canvas.height);
-  let zmin=Math.floor(Math.min(tl.z,br.z)/step)*step;
-  let zmax=Math.ceil(Math.max(tl.z,br.z)/step)*step;
-  let xmin=Math.floor(Math.min(tl.x,br.x)/step)*step;
-  let xmax=Math.ceil(Math.max(tl.x,br.x)/step)*step;
-  ctx.strokeStyle="#aaa";
-  ctx.lineWidth=1.5;
-  let x0a=cadToScr({z:zmin,x:0});
-  let x0b=cadToScr({z:zmax,x:0});
-  ctx.beginPath();
-  ctx.moveTo(x0a.x,x0a.y);
-  ctx.lineTo(x0b.x,x0b.y);
-  ctx.stroke();
-  let z0a=cadToScr({z:0,x:xmin});
-  let z0b=cadToScr({z:0,x:xmax});
-  ctx.beginPath();
-  ctx.moveTo(z0a.x,z0a.y);
-  ctx.lineTo(z0b.x,z0b.y);
-  ctx.stroke();
-  ctx.fillStyle="#ddd";
-  ctx.font="11px Arial";
-  ctx.textAlign="center";
-  ctx.textBaseline="top";
-  for(let z=zmin;z<=zmax;z+=step){
-    let p=cadToScr({z:z,x:0});
-    ctx.strokeStyle="#aaa";
-    ctx.beginPath();
-    ctx.moveTo(p.x,p.y-4);
-    ctx.lineTo(p.x,p.y+4);
-    ctx.stroke();
-    if(z!==0) ctx.fillText(String(z),p.x,p.y+6);
-  }
-  ctx.textAlign="left";
-  ctx.textBaseline="middle";
-  for(let x=xmin;x<=xmax;x+=step){
-    let p=cadToScr({z:0,x:x});
-    ctx.strokeStyle="#aaa";
-    ctx.beginPath();
-    ctx.moveTo(p.x-4,p.y);
-    ctx.lineTo(p.x+4,p.y);
-    ctx.stroke();
-    if(x!==0) ctx.fillText(String(x),p.x+6,p.y);
-  }
-  let o=cadToScr({z:0,x:0});
-  ctx.fillStyle="#ffcc00";
-  ctx.fillText("X0/Z0",o.x+6,o.y+12);
+  let step=10,tl=scrToCad(0,0),br=scrToCad(canvas.width,canvas.height);
+  let zmin=Math.floor(Math.min(tl.z,br.z)/step)*step,zmax=Math.ceil(Math.max(tl.z,br.z)/step)*step;
+  let xmin=Math.floor(Math.min(tl.x,br.x)/step)*step,xmax=Math.ceil(Math.max(tl.x,br.x)/step)*step;
+  ctx.strokeStyle="#aaa";ctx.lineWidth=1.5;
+  let a=cadToScr({z:zmin,x:0}),b=cadToScr({z:zmax,x:0});ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+  a=cadToScr({z:0,x:xmin});b=cadToScr({z:0,x:xmax});ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+  ctx.fillStyle="#ddd";ctx.font="11px Arial";ctx.textAlign="center";ctx.textBaseline="top";
+  for(let z=zmin;z<=zmax;z+=step){let p=cadToScr({z:z,x:0});ctx.beginPath();ctx.moveTo(p.x,p.y-4);ctx.lineTo(p.x,p.y+4);ctx.stroke();if(z!==0)ctx.fillText(String(z),p.x,p.y+6)}
+  ctx.textAlign="left";ctx.textBaseline="middle";
+  for(let x=xmin;x<=xmax;x+=step){let p=cadToScr({z:0,x:x});ctx.beginPath();ctx.moveTo(p.x-4,p.y);ctx.lineTo(p.x+4,p.y);ctx.stroke();if(x!==0)ctx.fillText(String(x),p.x+6,p.y)}
+  let o=cadToScr({z:0,x:0});ctx.fillStyle="#ffcc00";ctx.fillText("X0/Z0",o.x+6,o.y+12)
 }
-function drawPt(p){
-  ctx.fillStyle="#00ccff";
-  ctx.beginPath();
-  ctx.arc(p.x,p.y,3,0,Math.PI*2);
-  ctx.fill();
-}
-function detect(a,b){
-  return Math.abs(b.z-a.z)>=Math.abs(b.x-a.x)?"H":"V";
-}
+function drawPt(p){ctx.fillStyle="#00ccff";ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill()}
+function detect(a,b){return Math.abs(b.z-a.z)>=Math.abs(b.x-a.x)?"H":"V"}
+function lineEndpoints(e){return[{z:e.z1,x:e.x1},{z:e.z2,x:e.x2}]}
 function snap(p){
-  let best=p;
-  let bd=12/scale;
-  elems.forEach(e=>{
-    [{z:e.z1,x:e.x1},{z:e.z2,x:e.x2}].forEach(q=>{
-      let d=Math.hypot(p.z-q.z,p.x-q.x);
-      if(d<bd){
-        bd=d;
-        best=q;
-      }
-    });
-  });
-  return best;
+  let best=p,bd=12/scale;
+  elems.forEach(e=>{lineEndpoints(e).forEach(q=>{let d=Math.hypot(p.z-q.z,p.x-q.x);if(d<bd){bd=d;best=q}})});
+  allLineIntersections().forEach(q=>{let d=Math.hypot(p.z-q.z,p.x-q.x);if(d<bd){bd=d;best=q}});
+  return best
+}
+function allLineIntersections(){
+  let pts=[];
+  for(let i=0;i<elems.length;i++)for(let j=i+1;j<elems.length;j++){if(elems[i].type!=="LINE"||elems[j].type!=="LINE")continue;let p=lineIntersection(elems[i],elems[j]);if(p)pts.push(p)}
+  return pts
 }
 function hit(p){
-  let best=-1;
-  let bd=12/scale;
+  let best=-1,bd=14/scale;
   elems.forEach((e,i)=>{
-    let d=distSeg(p,{z:e.z1,x:e.x1},{z:e.z2,x:e.x2});
-    if(d<bd){
-      bd=d;
-      best=i;
-    }
+    let d=999999;
+    if(e.type==="LINE")d=distSeg(p,{z:e.z1,x:e.x1},{z:e.z2,x:e.x2});
+    if(e.type==="ARC")d=Math.abs(Math.hypot(p.z-e.cz,p.x-e.cx)-e.r);
+    if(d<bd){bd=d;best=i}
   });
-  return best;
+  return best
 }
 function distSeg(p,a,b){
-  let vz=b.z-a.z;
-  let vx=b.x-a.x;
-  let wz=p.z-a.z;
-  let wx=p.x-a.x;
-  let l=vz*vz+vx*vx;
-  let t=l?Math.max(0,Math.min(1,(wz*vz+wx*vx)/l)):0;
-  let q={z:a.z+t*vz,x:a.x+t*vx};
-  return Math.hypot(p.z-q.z,p.x-q.x);
+  let vz=b.z-a.z,vx=b.x-a.x,wz=p.z-a.z,wx=p.x-a.x,l=vz*vz+vx*vx;
+  let t=l?Math.max(0,Math.min(1,(wz*vz+wx*vx)/l)):0,q={z:a.z+t*vz,x:a.x+t*vx};
+  return Math.hypot(p.z-q.z,p.x-q.x)
+}
+function lineIntersection(e1,e2){
+  let x1=e1.z1,y1=e1.x1,x2=e1.z2,y2=e1.x2,x3=e2.z1,y3=e2.x1,x4=e2.z2,y4=e2.x2;
+  let den=(x1-x2)*(y3-y4)-(y1-y2)*(x3-x4);
+  if(Math.abs(den)<1e-9)return null;
+  let px=((x1*y2-y1*x2)*(x3-x4)-(x1-x2)*(x3*y4-y3*x4))/den;
+  let py=((x1*y2-y1*x2)*(y3-y4)-(y1-y2)*(x3*y4-y3*x4))/den;
+  return{z:px,x:py}
 }
 canvas.addEventListener("pointerdown",e=>{
-  canvas.setPointerCapture(e.pointerId);
-  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  canvas.setPointerCapture(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if(pointers.size===2){
     let ps=[...pointers.values()];
-    pinchStartDist=Math.hypot(ps[0].x-ps[1].x,ps[0].y-ps[1].y);
-    pinchStartScale=scale;
-    pinchStartOx=ox;
-    pinchStartOy=oy;
-    pinchCenterStart={
-      x:(ps[0].x+ps[1].x)/2,
-      y:(ps[0].y+ps[1].y)/2
-    };
-    start=null;
-    end=null;
-    draw();
-    return;
+    pinchStartDist=Math.hypot(ps[0].x-ps[1].x,ps[0].y-ps[1].y);pinchStartScale=scale;pinchStartOx=ox;pinchStartOy=oy;
+    pinchCenterStart={x:(ps[0].x+ps[1].x)/2,y:(ps[0].y+ps[1].y)/2};start=null;end=null;draw();return
   }
-  if(mode==="PAN"){
-    panStart={x:e.clientX,y:e.clientY};
-    panOx=ox;
-    panOy=oy;
-    return;
-  }
+  if(mode==="PAN"){panStart={x:e.clientX,y:e.clientY};panOx=ox;panOy=oy;return}
   let rect=canvas.getBoundingClientRect();
-  let p=snap(scrToCad(e.clientX-rect.left,e.clientY-rect.top));
-  if(mode==="DEL"){
-    selected=hit(p);
-    if(selected>=0){
-      pushUndo();
-      elems.splice(selected,1);
-      selected=-1;
-      draw();
-    }
-    return;
-  }
-  start=p;
-  end=p;
+  let raw=scrToCad(e.clientX-rect.left,e.clientY-rect.top);
+  let sp=snap(raw);
+  if(mode==="DEL"){selected=hit(raw);if(selected>=0){pushUndo();elems.splice(selected,1);selected=-1;pick=[];trimKeepPoint=null;draw()}return}
+  if(["TRIM","C","R"].includes(mode)){selectForEdit(raw);return}
+  if(mode==="ANGLE"){pending={p:sp};openAnglePanel();return}
+  start=sp;end=sp
 });
 canvas.addEventListener("pointermove",e=>{
   if(!pointers.has(e.pointerId))return;
   pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
   if(pointers.size===2){
-    let ps=[...pointers.values()];
-    let d=Math.hypot(ps[0].x-ps[1].x,ps[0].y-ps[1].y);
-    let c={
-      x:(ps[0].x+ps[1].x)/2,
-      y:(ps[0].y+ps[1].y)/2
-    };
-    if(pinchStartDist>0){
-      scale=Math.max(1,Math.min(120,pinchStartScale*(d/pinchStartDist)));
-      ox=pinchStartOx+(c.x-pinchCenterStart.x);
-      oy=pinchStartOy+(c.y-pinchCenterStart.y);
-      draw();
-    }
-    return;
+    let ps=[...pointers.values()],d=Math.hypot(ps[0].x-ps[1].x,ps[0].y-ps[1].y),c={x:(ps[0].x+ps[1].x)/2,y:(ps[0].y+ps[1].y)/2};
+    if(pinchStartDist>0){scale=Math.max(1,Math.min(120,pinchStartScale*(d/pinchStartDist)));ox=pinchStartOx+(c.x-pinchCenterStart.x);oy=pinchStartOy+(c.y-pinchCenterStart.y);draw()}
+    return
   }
-  if(mode==="PAN"&&panStart){
-    ox=panOx+(e.clientX-panStart.x);
-    oy=panOy+(e.clientY-panStart.y);
-    draw();
-    return;
-  }
-  let rect=canvas.getBoundingClientRect();
-  let p=scrToCad(e.clientX-rect.left,e.clientY-rect.top);
+  if(mode==="PAN"&&panStart){ox=panOx+(e.clientX-panStart.x);oy=panOy+(e.clientY-panStart.y);draw();return}
+  let rect=canvas.getBoundingClientRect(),p=scrToCad(e.clientX-rect.left,e.clientY-rect.top);
   document.getElementById("pos").textContent="Z"+fmt(p.z)+" X"+fmt(p.x);
-  if(start){
-    end=snap(p);
-    draw();
-  }
+  if(start){end=snap(p);draw()}
 });
 canvas.addEventListener("pointerup",e=>{
   pointers.delete(e.pointerId);
-  if(mode==="PAN"){
-    panStart=null;
-    return;
-  }
+  if(mode==="PAN"){panStart=null;return}
+  if(["TRIM","C","R","ANGLE","DEL"].includes(mode))return;
   if(!start||!end)return;
   let d=mode==="AUTO"?detect(start,end):mode;
-  if(d!=="H"&&d!=="V"){
-    start=null;
-    end=null;
-    draw();
-    return;
-  }
-  pending={a:start,b:end,d:d};
-  openPanel();
+  if(d!=="H"&&d!=="V"){start=null;end=null;draw();return}
+  pending={a:start,b:end,d:d};openLinePanel()
 });
-canvas.addEventListener("pointercancel",e=>{
-  pointers.delete(e.pointerId);
-  panStart=null;
-});
-function openPanel(){
-  let p=document.getElementById("panel");
-  let ins=document.getElementById("inputs");
-  if(pending.d==="H"){
-    ins.innerHTML='水平LINE：X位置のみ入力<br><input id="ix" type="number" step="0.001" value="'+fmt((pending.a.x+pending.b.x)/2)+'">';
-  }else{
-    ins.innerHTML='垂直LINE：Z位置のみ入力<br><input id="iz" type="number" step="0.001" value="'+fmt((pending.a.z+pending.b.z)/2)+'">';
-  }
-  p.style.display="block";
+canvas.addEventListener("pointercancel",e=>{pointers.delete(e.pointerId);panStart=null});
+function focusAndSelectFirstInput(){
+  setTimeout(()=>{
+    let inp=document.querySelector("#panel input");
+    if(!inp)return;
+    inp.focus();
+    try{inp.select();inp.setSelectionRange(0,inp.value.length)}catch(e){}
+  },80)
 }
+function openLinePanel(){
+  panelType="LINE";
+  let ins=document.getElementById("inputs"),note=document.getElementById("pnote");
+  document.getElementById("ptitle").textContent="LINE INPUT";
+  if(pending.d==="H")ins.innerHTML='水平LINE：X位置のみ入力<br><input id="ix" type="text" inputmode="decimal" value="'+fmt((pending.a.x+pending.b.x)/2)+'">';
+  else ins.innerHTML='垂直LINE：Z位置のみ入力<br><input id="iz" type="text" inputmode="decimal" value="'+fmt((pending.a.z+pending.b.z)/2)+'">';
+  note.textContent="長さはスワイプ長を使用します";
+  document.getElementById("panel").style.display="block";focusAndSelectFirstInput()
+}
+function openAnglePanel(){
+  panelType="ANGLE";document.getElementById("ptitle").textContent="ANGLE LINE";
+  document.getElementById("inputs").innerHTML='角度 deg（+Z方向基準）<br><input id="ang" type="text" inputmode="decimal" value="45">'+'長さ<br><input id="len" type="text" inputmode="decimal" value="100">';
+  document.getElementById("pnote").textContent="端点または交点から角度線を作成";
+  document.getElementById("panel").style.display="block";focusAndSelectFirstInput()
+}
+function openChamferPanel(kind){
+  panelType=kind;
+  document.getElementById("ptitle").textContent=kind==="C"?"C CHAMFER":"R CHAMFER";
+  document.getElementById("inputs").innerHTML=(kind==="C"?'C値':'R値')+'<br><input id="crv" type="text" inputmode="decimal" value="1">';
+  document.getElementById("pnote").textContent="LINE-LINEのみ対応";
+  document.getElementById("panel").style.display="block";focusAndSelectFirstInput()
+}
+function okPanel(){if(panelType==="LINE")okLine();else if(panelType==="ANGLE")okAngle();else if(panelType==="C")okC();else if(panelType==="R")okR()}
 function okLine(){
   pushUndo();
-  if(pending.d==="H"){
-    let x=Number(document.getElementById("ix").value);
-    elems.push({
-      type:"LINE",
-      z1:pending.a.z,
-      x1:x,
-      z2:pending.b.z,
-      x2:x
-    });
-  }else{
-    let z=Number(document.getElementById("iz").value);
-    elems.push({
-      type:"LINE",
-      z1:z,
-      x1:pending.a.x,
-      z2:z,
-      x2:pending.b.x
-    });
-  }
-  cancelLine();
+  if(pending.d==="H"){let x=Number(document.getElementById("ix").value);elems.push({type:"LINE",z1:pending.a.z,x1:x,z2:pending.b.z,x2:x})}
+  else{let z=Number(document.getElementById("iz").value);elems.push({type:"LINE",z1:z,x1:pending.a.x,z2:z,x2:pending.b.x})}
+  cancelPanel()
 }
-function cancelLine(){
-  document.getElementById("panel").style.display="none";
-  start=null;
-  end=null;
-  pending=null;
-  draw();
+function okAngle(){
+  let a=Number(document.getElementById("ang").value)*Math.PI/180,l=Number(document.getElementById("len").value),p=pending.p;
+  let q={z:p.z+l*Math.cos(a),x:p.x+l*Math.sin(a)};
+  pushUndo();elems.push({type:"LINE",z1:p.z,x1:p.x,z2:q.z,x2:q.x});cancelPanel()
+}
+function cancelPanel(){document.getElementById("panel").style.display="none";panelType="";pending=null;start=null;end=null;draw()}
+function selectForEdit(p){
+  let i=hit(p);if(i<0)return;
+  if(elems[i].type!=="LINE"){alert("現在はLINEのみ対応です");return}
+  if(mode==="TRIM"){
+    if(pick.length===0){pick=[i];trimKeepPoint={z:p.z,x:p.x};selected=i;draw();return}
+    if(pick.length===1){
+      if(i===pick[0]){trimKeepPoint={z:p.z,x:p.x};selected=i;draw();return}
+      pick.push(i);selected=i;doTrimKeepSide();return
+    }
+  }
+  if(mode==="C"||mode==="R"){
+    if(!pick.includes(i))pick.push(i);selected=i;draw();
+    if(pick.length>=2){pick=pick.slice(0,2);if(mode==="C")openChamferPanel("C");if(mode==="R")openChamferPanel("R")}
+  }
+}
+function doTrimKeepSide(){
+  let target=elems[pick[0]],base=elems[pick[1]],p=lineIntersection(target,base);
+  if(!p){alert("交点がありません");pick=[];selected=-1;trimKeepPoint=null;draw();return}
+  if(!trimKeepPoint){alert("残す方向が不明です");pick=[];selected=-1;draw();return}
+  pushUndo();trimLineByTappedSide(target,p,trimKeepPoint);pick=[];selected=-1;trimKeepPoint=null;draw()
+}
+function trimLineByTappedSide(e,inter,tap){
+  let dz=e.z2-e.z1,dx=e.x2-e.x1,len2=dz*dz+dx*dx;
+  if(len2<1e-12){alert("LINE長さが不足しています");return}
+  let sTap=(tap.z-inter.z)*dz+(tap.x-inter.x)*dx;
+  let s1=(e.z1-inter.z)*dz+(e.x1-inter.x)*dx;
+  let s2=(e.z2-inter.z)*dz+(e.x2-inter.x)*dx;
+  if(Math.abs(sTap)<1e-9){alert("交点付近ではなく、残したい側をタップしてください");return}
+  if(sTap*s1>0){e.z2=inter.z;e.x2=inter.x;return}
+  if(sTap*s2>0){e.z1=inter.z;e.x1=inter.x;return}
+  let d1=Math.hypot(tap.z-e.z1,tap.x-e.x1),d2=Math.hypot(tap.z-e.z2,tap.x-e.x2);
+  if(d1<d2){e.z2=inter.z;e.x2=inter.x}else{e.z1=inter.z;e.x1=inter.x}
+}
+function farDirFromIntersection(e,p){
+  let a={z:e.z1,x:e.x1},b={z:e.z2,x:e.x2};
+  let d1=Math.hypot(a.z-p.z,a.x-p.x),d2=Math.hypot(b.z-p.z,b.x-p.x);
+  let f=d1>d2?a:b,l=Math.hypot(f.z-p.z,f.x-p.x);
+  if(l<1e-9)return null;
+  return{z:(f.z-p.z)/l,x:(f.x-p.x)/l}
+}
+function setNearEndpoint(e,p,q){
+  let d1=Math.hypot(e.z1-p.z,e.x1-p.x),d2=Math.hypot(e.z2-p.z,e.x2-p.x);
+  if(d1<d2){e.z1=q.z;e.x1=q.x}else{e.z2=q.z;e.x2=q.x}
+}
+function okC(){
+  let c=Number(document.getElementById("crv").value),e1=elems[pick[0]],e2=elems[pick[1]],p=lineIntersection(e1,e2);
+  if(!p){alert("交点がありません");cancelPanel();return}
+  let u1=farDirFromIntersection(e1,p),u2=farDirFromIntersection(e2,p);
+  if(!u1||!u2){alert("C不可");cancelPanel();return}
+  let p1={z:p.z+u1.z*c,x:p.x+u1.x*c},p2={z:p.z+u2.z*c,x:p.x+u2.x*c};
+  pushUndo();setNearEndpoint(e1,p,p1);setNearEndpoint(e2,p,p2);
+  elems.push({type:"LINE",z1:p1.z,x1:p1.x,z2:p2.z,x2:p2.x});
+  pick=[];selected=-1;trimKeepPoint=null;cancelPanel()
+}
+function okR(){
+  let r=Number(document.getElementById("crv").value),e1=elems[pick[0]],e2=elems[pick[1]],p=lineIntersection(e1,e2);
+  if(!p){alert("交点がありません");cancelPanel();return}
+  let u1=farDirFromIntersection(e1,p),u2=farDirFromIntersection(e2,p);
+  if(!u1||!u2){alert("R不可");cancelPanel();return}
+  let dot=u1.z*u2.z+u1.x*u2.x;dot=Math.max(-0.999999,Math.min(0.999999,dot));
+  let theta=Math.acos(dot);
+  if(theta<1e-6||Math.abs(Math.PI-theta)<1e-6){alert("R不可");cancelPanel();return}
+  let t=r/Math.tan(theta/2);
+  let p1={z:p.z+u1.z*t,x:p.x+u1.x*t},p2={z:p.z+u2.z*t,x:p.x+u2.x*t};
+  let bz=u1.z+u2.z,bx=u1.x+u2.x,bl=Math.hypot(bz,bx);
+  if(bl<1e-9){alert("R不可");cancelPanel();return}
+  bz/=bl;bx/=bl;
+  let cd=r/Math.sin(theta/2),cen={z:p.z+bz*cd,x:p.x+bx*cd};
+  let v1={z:p1.z-cen.z,x:p1.x-cen.x},v2={z:p2.z-cen.z,x:p2.x-cen.x};
+  let cross=v1.z*v2.x-v1.x*v2.z,cw=cross<0;
+  pushUndo();setNearEndpoint(e1,p,p1);setNearEndpoint(e2,p,p2);
+  elems.push({type:"ARC",z1:p1.z,x1:p1.x,z2:p2.z,x2:p2.x,cz:cen.z,cx:cen.x,r:r,cw:cw});
+  pick=[];selected=-1;trimKeepPoint=null;cancelPanel()
 }
 function showDXF(){
   let o=document.getElementById("out");
   o.style.display=o.style.display==="block"?"none":"block";
-  o.textContent=JSON.stringify(elems,null,2);
+  o.textContent=JSON.stringify(elems,null,2)
 }
 </script>
 </body>
