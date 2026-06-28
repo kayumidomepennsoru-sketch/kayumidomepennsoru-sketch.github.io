@@ -179,14 +179,57 @@ canvas.addEventListener("pointerup",e=>{
   pending={a:start,b:end,d:d};openLinePanel()
 });
 canvas.addEventListener("pointercancel",e=>{pointers.delete(e.pointerId);panStart=null});
+
+
 function focusAndSelectFirstInput(){
   setTimeout(()=>{
     let inp=document.querySelector("#panel input");
     if(!inp)return;
+
     inp.focus();
-    try{inp.select();inp.setSelectionRange(0,inp.value.length)}catch(e){}
-  },80)
+
+    try{
+      inp.select();
+      inp.setSelectionRange(0,inp.value.length);
+    }catch(e){}
+
+    // iPhone Safari対策：
+    // 見た目で全選択されなくても、最初の数字入力で既存値を消して上書きする
+    inp.dataset.overwriteFirst="1";
+
+    inp.onbeforeinput=function(ev){
+      if(inp.dataset.overwriteFirst!=="1")return;
+
+      // 数字・小数点・マイナスなど、文字入力時だけ上書き
+      if(ev.inputType && ev.inputType.indexOf("insert")===0){
+        ev.preventDefault();
+
+        let v=ev.data || "";
+        inp.value=v;
+        inp.dataset.overwriteFirst="0";
+
+        setTimeout(()=>{
+          try{
+            inp.setSelectionRange(inp.value.length,inp.value.length);
+          }catch(e){}
+        },0);
+      }
+    };
+
+    inp.onkeydown=function(ev){
+      // 削除キーやカーソル操作をした場合は、通常編集へ移行
+      if(ev.key==="Backspace" || ev.key==="Delete" || ev.key==="ArrowLeft" || ev.key==="ArrowRight"){
+        inp.dataset.overwriteFirst="0";
+      }
+    };
+
+    inp.onblur=function(){
+      inp.dataset.overwriteFirst="0";
+    };
+
+  },250);
 }
+
 function openLinePanel(){
   panelType="LINE";
   let ins=document.getElementById("inputs"),note=document.getElementById("pnote");
